@@ -1,8 +1,6 @@
 .venv/
-venv/
 __pycache__/
 .idea/
-data/*
-!data/.gitkeep
 outputs/*
 !outputs/.gitkeep
+data/retail/

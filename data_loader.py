@@ -1,53 +1,67 @@
 """
-Loads the three datasets. The first call downloads from UCI (needs internet)
-and saves a CSV copy in data/. Next calls read the local CSV.
+Loads the three datasets. Each project has its own folder inside data/:
+  data/heart/    processed.cleveland.data, processed.hungarian.data,
+                 processed.switzerland.data, processed.va.data
+  data/student/  student-mat.csv
+  data/retail/   Online Retail.xlsx
 """
 from pathlib import Path
 import pandas as pd
-from ucimlrepo import fetch_ucirepo
 
 DATA = Path(__file__).parent / "data"
-DATA.mkdir(exist_ok=True)
+
+HEART_COLS = ["age", "sex", "cp", "trestbps", "chol", "fbs", "restecg",
+              "thalach", "exang", "oldpeak", "slope", "ca", "thal", "num"]
 
 
-def load_heart() -> pd.DataFrame:
-    """UCI Heart Disease. Returns features + binary 'target' (1 = disease)."""
-    path = DATA / "heart.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    ds = fetch_ucirepo(id=45)
-    df = ds.data.features.copy()
-    df["target"] = (ds.data.targets["num"] > 0).astype(int)  # 0 = healthy, 1-4 = disease
-    df.to_csv(path, index=False)
-    return df
+def _path(folder: str, filename: str) -> Path:
+    path = DATA / folder / filename
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {path}\nPut it inside data/{folder}/")
+    return path
 
 
-def load_student() -> pd.DataFrame:
-    """UCI Student Performance. Target column is G3 (final grade, 0-20)."""
-    path = DATA / "student.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    ds = fetch_ucirepo(id=320)
-    df = ds.data.original.copy()
-    df.to_csv(path, index=False)
-    return df
+def _read_heart(filename: str) -> pd.DataFrame:
+    return pd.read_csv(_path("heart", filename), header=None, names=HEART_COLS, na_values="?")
 
 
-def load_retail() -> pd.DataFrame:
-    """UCI Online Retail (541,909 rows)."""
-    path = DATA / "online_retail.csv"
-    if path.exists():
-        return pd.read_csv(path)
-    ds = fetch_ucirepo(id=352)
-    df = ds.data.original.copy()
-    if "InvoiceNo" not in df.columns:
-        df = df.reset_index()
-    df.to_csv(path, index=False)
+def load_heart(filename: str = "processed.cleveland.data") -> pd.DataFrame:
+    """One hospital file (default Cleveland, 303 rows). Adds binary target: 1 = disease."""
+    df = _read_heart(filename)
+    df["target"] = (df["num"] > 0).astype(int)
+    return df.drop(columns="num")
+
+
+def load_heart_all() -> pd.DataFrame:
+    """All 4 hospitals merged (920 rows). Column 'source' = hospital name (drop it before training)."""
+    parts = []
+    for name in ["cleveland", "hungarian", "switzerland", "va"]:
+        d = _read_heart(f"processed.{name}.data")
+        d["source"] = name
+        parts.append(d)
+    df = pd.concat(parts, ignore_index=True)
+    df["target"] = (df["num"] > 0).astype(int)
+    return df.drop(columns="num")
+
+
+def load_student(filename: str = "student-mat.csv") -> pd.DataFrame:
+    """UCI Student Performance (separator ';'). Target: G3."""
+    return pd.read_csv(_path("student", filename), sep=";")
+
+
+def load_retail(filename: str = "Online Retail.xlsx") -> pd.DataFrame:
+    """UCI Online Retail. A CSV copy is cached next to the Excel file after the first read."""
+    xlsx = _path("retail", filename)
+    cache = xlsx.with_suffix(".csv")
+    if cache.exists():
+        return pd.read_csv(cache, parse_dates=["InvoiceDate"])
+    df = pd.read_excel(xlsx)
+    df.to_csv(cache, index=False)
     return df
 
 
 if __name__ == "__main__":
-    # Run this file once to download everything: python data_loader.py
-    for name, fn in [("heart", load_heart), ("student", load_student), ("retail", load_retail)]:
-        d = fn()
-        print(f"{name}: {d.shape}")
+    print("heart (Cleveland):", load_heart().shape)
+    print("heart (all 4)    :", load_heart_all().shape)
+    print("student          :", load_student().shape)
+    print("retail           :", load_retail().shape)
