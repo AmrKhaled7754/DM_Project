@@ -3,4 +3,4 @@ __pycache__/
 .idea/
 outputs/*
 !outputs/.gitkeep
-data/retail/
+data/retail/*.csv
