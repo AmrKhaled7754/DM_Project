@@ -1,17 +1,13 @@
 """
 Loads the three datasets. Each project has its own folder inside data/:
-  data/heart/    processed.cleveland.data, processed.hungarian.data,
-                 processed.switzerland.data, processed.va.data
-  data/student/  student-mat.csv
-  data/retail/   Online Retail.xlsx
+  data/heart/    heart.csv                       (Cardiovascular disease, sep=';')
+  data/student/  StudentPerformanceFactors.csv   (Target: Exam_Score)
+  data/retail/   Online Retail.csv  (or Online Retail.xlsx)
 """
 from pathlib import Path
 import pandas as pd
 
 DATA = Path(__file__).parent / "data"
-
-HEART_COLS = ["age", "sex", "cp", "trestbps", "chol", "fbs", "restecg",
-              "thalach", "exang", "oldpeak", "slope", "ca", "thal", "num"]
 
 
 def _path(folder: str, filename: str) -> Path:
@@ -21,47 +17,39 @@ def _path(folder: str, filename: str) -> Path:
     return path
 
 
-def _read_heart(filename: str) -> pd.DataFrame:
-    return pd.read_csv(_path("heart", filename), header=None, names=HEART_COLS, na_values="?")
+def load_heart(filename: str = "heart.csv") -> pd.DataFrame:
+    """Cardiovascular dataset (10K rows). Separator is ';'. Target: 'cardio' (0/1)."""
+    return pd.read_csv(_path("heart", filename), sep=";")
 
 
-def load_heart(filename: str = "processed.cleveland.data") -> pd.DataFrame:
-    """One hospital file (default Cleveland, 303 rows). Adds binary target: 1 = disease."""
-    df = _read_heart(filename)
-    df["target"] = (df["num"] > 0).astype(int)
-    return df.drop(columns="num")
+def load_student(filename: str = "StudentPerformanceFactors.csv") -> pd.DataFrame:
+    """Student Performance Factors (Kaggle). Target: Exam_Score."""
+    return pd.read_csv(_path("student", filename))
 
 
-def load_heart_all() -> pd.DataFrame:
-    """All 4 hospitals merged (920 rows). Column 'source' = hospital name (drop it before training)."""
-    parts = []
-    for name in ["cleveland", "hungarian", "switzerland", "va"]:
-        d = _read_heart(f"processed.{name}.data")
-        d["source"] = name
-        parts.append(d)
-    df = pd.concat(parts, ignore_index=True)
-    df["target"] = (df["num"] > 0).astype(int)
-    return df.drop(columns="num")
+def _read_csv_safe(path: Path) -> pd.DataFrame:
+    """Online Retail CSV is often latin-1 encoded, so fall back if utf-8 fails."""
+    try:
+        return pd.read_csv(path)
+    except UnicodeDecodeError:
+        return pd.read_csv(path, encoding="ISO-8859-1")
 
 
-def load_student(filename: str = "student-mat.csv") -> pd.DataFrame:
-    """UCI Student Performance (separator ';'). Target: G3."""
-    return pd.read_csv(_path("student", filename), sep=";")
-
-
-def load_retail(filename: str = "Online Retail.xlsx") -> pd.DataFrame:
-    """UCI Online Retail. A CSV copy is cached next to the Excel file after the first read."""
-    xlsx = _path("retail", filename)
-    cache = xlsx.with_suffix(".csv")
-    if cache.exists():
-        return pd.read_csv(cache, parse_dates=["InvoiceDate"])
-    df = pd.read_excel(xlsx)
-    df.to_csv(cache, index=False)
+def load_retail(filename: str = "Online Retail.csv") -> pd.DataFrame:
+    """Online Retail. Reads the CSV; if it's missing, reads the xlsx and caches a CSV copy."""
+    csv_path = DATA / "retail" / filename
+    if csv_path.exists():
+        df = _read_csv_safe(csv_path)
+    else:
+        xlsx = _path("retail", csv_path.with_suffix(".xlsx").name)
+        df = pd.read_excel(xlsx)
+        df.to_csv(csv_path, index=False)
+    if "InvoiceDate" in df.columns:
+        df["InvoiceDate"] = pd.to_datetime(df["InvoiceDate"], errors="coerce")
     return df
 
 
 if __name__ == "__main__":
-    print("heart (Cleveland):", load_heart().shape)
-    print("heart (all 4)    :", load_heart_all().shape)
-    print("student          :", load_student().shape)
-    print("retail           :", load_retail().shape)
+    print("heart  :", load_heart().shape)
+    print("student:", load_student().shape)
+    print("retail :", load_retail().shape)
